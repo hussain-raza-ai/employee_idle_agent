@@ -40,6 +40,8 @@ def _draw_zones(
             color = (0, 0, 255)
         elif state == "ACTIVE":
             color = (0, 220, 0)
+        elif state == "BREAK":
+            color = (160, 160, 160)
         cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2)
         if zone.work_polygon:
             work = np.array(zone.polygon_pixels(zone.work_polygon, w, h), dtype=np.int32)
@@ -226,6 +228,7 @@ def run_pipeline(
         f"Behaviors: phone={sm.phone_confirm}s talking={sm.talk_confirm}s "
         f"off_seat={sm.off_seat_confirm}s not_working={sm.not_working_confirm}s"
     )
+    print(sm.calendar.describe())
     print(
         f"Primary track: enabled={primary.enabled} "
         f"lost_grace={primary.lost_grace_seconds}s "

@@ -12,6 +12,7 @@ from typing import Deque, Dict, List, Optional
 import yaml
 
 from idle_agent import clock
+from idle_agent.shifts import ShiftCalendar
 
 
 def _merge_dict(base: dict, override: dict) -> dict:
@@ -115,6 +116,8 @@ class _ZoneRuntime:
     last_seat_occupied: bool = False
     last_working: bool = False
     last_interacting: bool = False
+    # Why the zone is in BREAK (outside_shift, break:lunch, weekly_off, holiday).
+    break_reason: Optional[str] = None
 
 
 class ZoneStateMachine:
@@ -167,6 +170,9 @@ class ZoneStateMachine:
         self.not_working_enabled = bool(idle_hands.get("enabled", True))
         self.not_working_confirm = float(idle_hands.get("confirm_seconds", 60))
         self.not_working_grace = float(idle_hands.get("end_grace_seconds", 8))
+        # Shifts, breaks and days off. ignore_shifts (set by demo_overrides.yaml)
+        # turns it off so a recording is judged whatever time it was made.
+        self.calendar = ShiftCalendar.from_rules(rules, self.tz)
         self._zones: Dict[str, _ZoneRuntime] = {zid: _ZoneRuntime() for zid in zone_ids}
 
     def _wall(self, t_seconds: float) -> datetime:
@@ -188,6 +194,21 @@ class ZoneStateMachine:
     ) -> List[IdleEvent]:
         rt = self._zones[zone_id]
         events: List[IdleEvent] = []
+
+        # Off duty (outside a shift, an approved break, a day off): close what is
+        # open, then raise nothing until the shift resumes.
+        on_duty, reason = self.calendar.status(self._wall(t))
+        if not on_duty:
+            if rt.state != "BREAK":
+                events.extend(self._enter_break(rt, zone_id, t))
+                rt = self._zones[zone_id]
+            rt.break_reason = reason
+            return events
+        if rt.state == "BREAK":
+            # Back on duty with a clean slate: nobody is judged idle or away
+            # on time that passed during the break.
+            rt.state = "UNKNOWN"
+            rt.break_reason = None
 
         rt.motion_window.append(motion_score if occupied else 0.0)
         max_len = max(3, int(self.motion_window_seconds))
@@ -324,6 +345,27 @@ class ZoneStateMachine:
                 rt, zone_id, t, occupied, track_id, confidence, avg_motion, signals
             )
         )
+        return events
+
+    def _enter_break(self, rt: _ZoneRuntime, zone_id: str, t: float) -> List[IdleEvent]:
+        """Close every open episode at the start of a break, then reset the zone.
+
+        Only episodes whose *_STARTED went out are closed, so every *_ENDED
+        still has a matching *_STARTED. Unconfirmed candidates are dropped.
+        """
+        events: List[IdleEvent] = []
+        if rt.state == "IDLE" or (rt.state == "AWAY" and rt.away_started_emitted):
+            end_type = "IDLE_ENDED" if rt.state == "IDLE" else "AWAY_ENDED"
+            events.extend(self._close_episode(rt, zone_id, t, end_type))
+        for flag, prefix, reason in (
+            (rt.phone, "PHONE", "phone"),
+            (rt.interacting, "INTERACTING", "talking"),
+            (rt.off_seat, "OFF_SEAT", "off_seat"),
+            (rt.not_working, "NOT_WORKING", "not_working"),
+        ):
+            if flag.active and flag.episode_started_at is not None:
+                events.append(self._close_flag(flag, zone_id, t, f"{prefix}_ENDED", reason))
+        self._zones[zone_id] = _ZoneRuntime(state="BREAK")
         return events
 
     def _maybe_escalate(
@@ -595,6 +637,8 @@ class ZoneStateMachine:
         labels: Dict[str, List[str]] = {}
         for zid, rt in self._zones.items():
             active: List[str] = []
+            if rt.state == "BREAK" and rt.break_reason:
+                active.append(rt.break_reason)  # e.g. break:lunch, on the preview
             if rt.phone.active:
                 active.append("phone")
             if rt.interacting.active:
