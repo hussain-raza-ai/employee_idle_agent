@@ -11,25 +11,39 @@ Detail belongs in the PR description, which stays on GitHub.
 
 ## Next up
 
-1. **Fix the orphan `AWAY_ENDED`** (CLAUDE.md bug 1). The regression test is
-   already written: remove the `xfail` from
-   `tests/test_state_machine.py::test_short_absence_from_idle_is_clean` and make
-   it pass. A short absence from IDLE must not invent an AWAY episode, and the
-   returning occupant must serve the full idle confirm period again.
-2. **Fix the 1970 timestamps** (bug 2). `clip_start` should default to the wall
-   clock for a live RTSP source, and the CLI should refuse a file source with no
-   `--clip-start` rather than silently dating events to the epoch. Test:
-   `test_timestamps_are_not_epoch_without_clip_start`.
-3. **Calibrate the motion threshold** (bug 4). Run the full cam-01 clip on the
-   GPU, read the `m=` values off `preview.mp4`, and record the real range in
-   `docs/calibration/notes.md`. Only then decide whether `idle_threshold: 0.08`
-   means anything.
-4. **Decide the counter-desk interacting policy** (see the repo review). At a
-   service counter, talking to a customer is the job, and `interacting=True`
-   currently switches off the wrist-in-work-polygon override. Measure it on real
-   footage before changing a threshold.
-5. **Implement the shift and break calendar** (bug 3), so no alerts fire during
-   lunch or on a weekly off.
+These need the GPU and real footage, so they belong on a Vast session.
+
+1. **First real run.** Full cam-01 clip on the GPU. Compare the event counts
+   with the run before these fixes (`save_run.sh` manifests in the bucket):
+   expect fewer `AWAY_ENDED` (no orphans) and real 2026 timestamps.
+2. **Calibrate the motion threshold** (CLAUDE.md bug 4). Read the `m=` values
+   off `preview.mp4` for active work, still-at-desk and empty, and record the
+   real range in `docs/calibration/notes.md`. Only then decide whether
+   `idle_threshold: 0.08` means anything.
+3. **Decide the counter-desk interacting policy.** At a service counter,
+   talking to a customer is the job, and `interacting=True` switches off the
+   wrist-in-work-polygon override. Measure it on real footage first.
+4. **Primary-track grace and dwell** (bug 6). Measure how often a passer-by
+   takes over the desk and how late `AWAY_STARTED` arrives with the 60 s grace.
+
+CPU-only work that can be done anywhere: RTSP reconnect (bug 5), the ERP
+adapter, `zone_overrides`.
+
+## 2026-11-25 — three state-machine bugs fixed (CPU, no GPU run)
+
+- **Orphan AWAY_ENDED:** a short absence from IDLE no longer emits an
+  `AWAY_ENDED` without `AWAY_STARTED`, and a returning occupant serves a full
+  idle confirm period. `IDLE_ENDED` is stamped when the occupant left.
+- **1970 timestamps:** new `clock.py`. Recordings take `--clip-start` or the NVR
+  file name, else the CLI stops before loading the model. Live RTSP anchors to
+  the wall clock when the stream opens. Times are in the site timezone.
+  `tzdata` added (Windows needs it).
+- **Shift calendar:** new `shifts.py` and a `BREAK` state. Off duty closes open
+  episodes with their `*_ENDED` and raises nothing; back on duty starts fresh.
+  Demo overrides keep it off, so default recording runs are unchanged.
+- Tests: 95 passing, no xfail. End-to-end pipeline run with a fake detector
+  over a 12:58 clip with production rules: `NOT_WORKING` closed at 13:00,
+  nothing during lunch, preview shows `BREAK break:lunch` in grey.
 
 ## 2026-11-25 — dev workflow setup
 
