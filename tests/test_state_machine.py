@@ -8,6 +8,7 @@ and the assertion stands as the regression test.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,13 +39,17 @@ SEATED_IDLE = _signals(working=False)  # hands visible, off the keyboard
 TYPING = _signals(working=True)  # a wrist inside the work polygon
 LOW_MOTION = 0.004  # a still seated person, well under idle_threshold
 
+# A Wednesday morning inside the configured shift and clear of every break, so
+# timelines of up to ~80 minutes never touch the shift calendar.
+MONITORED_START = datetime(2026, 11, 18, 9, 0, 0, tzinfo=timezone(timedelta(hours=5)))
+
 
 @pytest.fixture(scope="module")
 def rules():
     return load_rules(REPO / "config" / "idle_rules.yaml")
 
 
-def run_timeline(rules, timeline, clip_start=None):
+def run_timeline(rules, timeline, clip_start=MONITORED_START):
     """Feed the machine a timeline; return the emitted events in order."""
     sm = ZoneStateMachine("cam-01", [ZONE], rules, clip_start=clip_start)
     events = []
@@ -145,14 +150,9 @@ def test_away_ends_when_occupant_returns(rules):
     assert types_of(events).count("AWAY_ENDED") == 1
 
 
-# --- bug 1 in CLAUDE.md: orphan AWAY_ENDED ---------------------------------
+# --- leaving and returning ---------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="CLAUDE.md bug 1: a short absence from IDLE emits AWAY_ENDED with no "
-    "AWAY_STARTED, then restarts IDLE with no confirm period",
-    strict=True,
-)
 def test_short_absence_from_idle_is_clean(rules):
     """IDLE → leave briefly → return still.
 
@@ -171,24 +171,67 @@ def test_short_absence_from_idle_is_clean(rules):
     )
     names = types_of(events)
     assert "AWAY_ENDED" not in names, "AWAY_ENDED without a matching AWAY_STARTED"
+    assert "AWAY_STARTED" not in names
     assert names.count("IDLE_STARTED") == 1, "IDLE restarted with no confirm period"
+    assert names.count("IDLE_ENDED") == 1
 
 
-def test_every_ended_event_has_a_matching_started(rules):
-    """Across a mixed timeline, no *_ENDED may appear without its *_STARTED.
-
-    Written to pass today so it keeps holding as the state machine changes;
-    the orphan case above is covered separately as an xfail.
-    """
-    confirm = float(rules["thresholds"]["away_confirm_seconds"])
-    events, _ = run_timeline(
+def test_returning_occupant_serves_a_fresh_idle_confirm(rules):
+    """After a short absence, IDLE comes back only after the full confirm period."""
+    confirm = float(rules["thresholds"]["idle_confirm_seconds"])
+    events, state = run_timeline(
         rules,
         [
-            (60, True, LOW_MOTION, TYPING),
-            (confirm + 60, False, 0.0, None),
-            (60, True, LOW_MOTION, TYPING),
+            (confirm + 60, True, LOW_MOTION, SEATED_IDLE),
+            (30, False, 0.0, None),
+            (confirm + 20, True, LOW_MOTION, SEATED_IDLE),
         ],
     )
+    idle_starts = [e for e in events if e.event_type == "IDLE_STARTED"]
+    assert len(idle_starts) == 2
+    assert state == "IDLE"
+    # The second episode starts when the occupant came back, and is announced a
+    # full confirm period later — not on the first frame back.
+    second = idle_starts[1]
+    assert second.duration_seconds >= confirm
+
+
+def test_idle_ends_when_the_occupant_left(rules):
+    """IDLE_ENDED is stamped at the moment of leaving, not after the debounce."""
+    from datetime import datetime
+
+    confirm = float(rules["thresholds"]["idle_confirm_seconds"])
+    stay = confirm + 60
+    events, _ = run_timeline(
+        rules,
+        [(stay, True, LOW_MOTION, SEATED_IDLE), (30, False, 0.0, None)],
+    )
+    ended = next(e for e in events if e.event_type == "IDLE_ENDED")
+    left_at = MONITORED_START.timestamp() + stay
+    ended_at = datetime.fromisoformat(ended.ended_at).timestamp()
+    assert abs(ended_at - left_at) <= 1.0 / FPS + 1e-6
+
+
+def test_return_from_real_away_ends_it_then_waits_to_judge(rules):
+    """A confirmed AWAY closes on return; the occupant is UNKNOWN, not IDLE."""
+    confirm = float(rules["thresholds"]["away_confirm_seconds"])
+    events, state = run_timeline(
+        rules,
+        [
+            (30, True, LOW_MOTION, TYPING),
+            (confirm + 60, False, 0.0, None),
+            (20, True, LOW_MOTION, SEATED_IDLE),
+        ],
+    )
+    names = types_of(events)
+    assert names.count("AWAY_STARTED") == 1
+    assert names.count("AWAY_ENDED") == 1
+    assert "IDLE_STARTED" not in names, "IDLE must wait a full confirm period"
+    assert state == "UNKNOWN"
+
+
+def _assert_episodes_pair(events):
+    """No *_ENDED without an open *_STARTED of the same kind."""
     open_episodes: set[str] = set()
     for name in types_of(events):
         prefix, _, suffix = name.rpartition("_")
@@ -197,6 +240,22 @@ def test_every_ended_event_has_a_matching_started(rules):
         elif suffix == "ENDED":
             assert prefix in open_episodes, f"{name} with no {prefix}_STARTED"
             open_episodes.discard(prefix)
+
+
+@pytest.mark.parametrize("absence", [6, 30, 120, 290, 320, 900])
+def test_every_ended_event_has_a_matching_started(rules, absence):
+    """Idle, leave for various lengths, come back: episodes always pair up."""
+    confirm = float(rules["thresholds"]["idle_confirm_seconds"])
+    events, _ = run_timeline(
+        rules,
+        [
+            (confirm + 60, True, LOW_MOTION, SEATED_IDLE),
+            (absence, False, 0.0, None),
+            (confirm + 30, True, LOW_MOTION, SEATED_IDLE),
+            (60, True, LOW_MOTION, TYPING),
+        ],
+    )
+    _assert_episodes_pair(events)
 
 
 # --- behaviour flags -------------------------------------------------------
@@ -295,8 +354,8 @@ def test_idempotency_key_is_built_from_identity_and_start(rules):
     strict=True,
 )
 def test_timestamps_are_not_epoch_without_clip_start(rules):
-    events, _ = run_timeline(rules, [(240, True, LOW_MOTION, SEATED_IDLE)])
-    assert not events[0].started_at.startswith("1970"), "epoch timestamp"
+    sm = ZoneStateMachine("cam-01", [ZONE], rules)
+    assert not sm._iso(0).startswith("1970"), "epoch timestamp"
 
 
 def test_clip_start_anchors_timestamps(rules):

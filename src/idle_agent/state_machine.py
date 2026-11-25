@@ -199,22 +199,21 @@ class ZoneStateMachine:
             rt.empty_since = None
 
             if rt.state == "AWAY":
-                end_type = "AWAY_ENDED"
-                events.extend(self._close_episode(rt, zone_id, t, end_type))
-                rt.state = "ACTIVE" if high_motion or not low_motion else "IDLE"
+                if rt.away_started_emitted:
+                    events.extend(self._close_episode(rt, zone_id, t, "AWAY_ENDED"))
+                else:
+                    # The absence never reached away_confirm_seconds, so no
+                    # AWAY_STARTED went out and there is no episode to end.
+                    rt.episode_started_at = None
+                    rt.episode_track_id = None
+                    rt.episode_confidence = 0.0
+                # A returning occupant is not known to be idle yet: they serve a
+                # full idle_confirm_seconds again, through the branch below.
+                rt.state = "UNKNOWN"
                 rt.away_started_emitted = False
                 rt.escalate_emitted = False
-                if rt.state == "IDLE":
-                    rt.episode_started_at = t
-                    rt.episode_track_id = track_id
-                    rt.episode_confidence = confidence
-                    events.append(
-                        self._emit("IDLE_STARTED", zone_id, t, track_id, confidence, avg_motion)
-                    )
                 rt.candidate_since = None
                 rt.resume_since = None
-                events.extend(self._update_behaviors(rt, zone_id, t, True, track_id, confidence, avg_motion, signals))
-                return events
 
             if rt.state in ("UNKNOWN", "ACTIVE"):
                 if low_motion:
@@ -273,7 +272,9 @@ class ZoneStateMachine:
                 return events
 
             if rt.state == "IDLE":
-                events.extend(self._close_episode(rt, zone_id, t, "IDLE_ENDED"))
+                # End the idle episode when the occupant actually left, not when
+                # the debounce window ran out a few seconds later.
+                events.extend(self._close_episode(rt, zone_id, rt.empty_since, "IDLE_ENDED"))
                 rt.state = "AWAY"
                 rt.episode_started_at = rt.empty_since
                 rt.episode_track_id = None
