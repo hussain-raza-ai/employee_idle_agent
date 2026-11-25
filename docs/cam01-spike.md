@@ -18,20 +18,28 @@ Or one-shot on Windows after Python is installed:
 ## Setup
 
 ```powershell
-cd "d:\Al Wahid Business Consultant\New Clients\Contech Digital\CCTV Camra"
+cd employee_idle_agent
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-On Vast.ai (Ubuntu + CUDA), install a CUDA build of PyTorch first, then `pip install -r requirements.txt`.
+On Windows with an NVIDIA GPU, install a CUDA build of PyTorch first (pick the
+command from pytorch.org), then `pip install -r requirements.txt`; otherwise
+pip installs the CPU wheel.
+
+On Vast.ai, run `bash scripts/vast/bootstrap.sh` instead. The PyTorch template
+already ships CUDA torch, and the script pulls the recordings from the bucket.
 
 ## Run (full clip)
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m idle_agent --source file --camera-id cam-01
+python -m idle_agent --source file --camera-id cam-01 --clip-start "2026-11-18T15:00:05+05:00"
 ```
+
+Always pass `--clip-start` (the recording's real start time). Without it every
+event is dated `1970-01-01`.
 
 If multiple videos exist, pass the path explicitly:
 
@@ -49,10 +57,18 @@ python -m idle_agent --source file --device cpu --max-frames 120 --target-fps 4
 
 | File | Meaning |
 |------|---------|
-| `output/events.jsonl` | IDLE_*/AWAY_* events (demo thresholds: 15s idle / 20s away) |
-| `output/preview.mp4` | Boxes, zone polygons, state labels |
+| `output/events.jsonl` | IDLE/AWAY/PHONE/INTERACTING/OFF_SEAT/NOT_WORKING `_STARTED`/`_ESCALATED`/`_ENDED` events |
+| `output/evidence/*.jpg` | Annotated snapshot for each `_STARTED` and `_ESCALATED` event |
+| `output/preview.mp4` | Boxes, zone polygons, state labels, `m=` motion scores |
 
-Demo thresholds live in `config/demo_overrides.yaml`. Production durations remain in `config/idle_rules.yaml`.
+The CLI loads `config/demo_overrides.yaml` on top of `config/idle_rules.yaml` by
+default (pass `--demo-overrides ""` to disable). The demo file currently keeps
+the production durations (idle 180 s, away 300 s, escalate 900 s) and only
+changes the primary-track settings and `debounce_leave_seconds`, and turns off
+the shift calendar. For quicker test runs, lower `idle_confirm_seconds` and
+`away_confirm_seconds` there, not in `idle_rules.yaml`.
+
+On Vast, save the run before the instance goes: `bash scripts/vast/save_run.sh`.
 
 ## Later: live RTSP
 

@@ -1,10 +1,26 @@
-recordings/  
-output/  
-tmp_upload/  
-*.pt  
-__pycache__/ 
-recordings/  
-output/  
-tmp_upload/  
-*.pt  
-__pycache__/ 
+# Heavy assets — kept in the B2/S3 bucket, never in git (see CLAUDE.md)
+recordings/
+output/
+tmp_upload/
+*.pt
+*.pth
+*.onnx
+*.engine
+
+# Secrets
+.env
+.git-credentials
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Editors / OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Claude Code: settings.json is shared, settings.local.json is per-machine
+.claude/settings.local.json

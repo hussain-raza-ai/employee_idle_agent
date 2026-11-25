@@ -1,34 +1,53 @@
 #!/usr/bin/env bash
+# Full cam-01 clip on a GPU instance, with evidence snapshots and a half-scale
+# preview. Paths come from the environment; defaults suit the Vast.ai template.
+#
+#   bash remote_run_full_cam01.sh
+#   VIDEO=/path/to/clip.mp4 CLIP_START=2026-11-18T15:00:05+05:00 bash remote_run_full_cam01.sh
 set -euo pipefail
-export PATH="/venv/main/bin:$PATH"
-cd /workspace/employee_idle_agent
 
-VIDEO="/root/video/cam01_full_h264.mp4"
-if [[ ! -f "$VIDEO" ]]; then
-  VIDEO="/root/video/cam01_full.mp4"
+REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+RECORDINGS_DIR="${RECORDINGS_DIR:-$REPO_DIR/recordings}"
+OUTPUT_DIR="${OUTPUT_DIR:-$REPO_DIR/output}"
+CAMERA_ID="${CAMERA_ID:-cam-01}"
+DEVICE="${DEVICE:-cuda:0}"
+TARGET_FPS="${TARGET_FPS:-8}"
+# Wall-clock start of the pilot recording NVR-7BB9_ch12_main_20261118150005_*.
+CLIP_START="${CLIP_START:-2026-11-18T15:00:05+05:00}"
+
+[[ -x /venv/main/bin/python ]] && export PATH="/venv/main/bin:$PATH"
+cd "$REPO_DIR"
+
+VIDEO="${VIDEO:-$(find "$RECORDINGS_DIR/$CAMERA_ID" -maxdepth 1 -type f \
+  \( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' -o -name '*.mov' \) \
+  2>/dev/null | sort | head -1)}"
+if [[ -z "$VIDEO" || ! -f "$VIDEO" ]]; then
+  echo "No video found. Put one under $RECORDINGS_DIR/$CAMERA_ID/ or set VIDEO=..." >&2
+  exit 1
 fi
 
-# Clear previous evidence from last run (keep folder)
-rm -rf /workspace/employee_idle_agent/output/evidence
-mkdir -p /workspace/employee_idle_agent/output/evidence
+# Clear evidence from the previous run so this run's snapshots stand alone.
+# Save the previous run first if it matters: bash scripts/vast/save_run.sh
+rm -rf "$OUTPUT_DIR/evidence"
+mkdir -p "$OUTPUT_DIR/evidence"
 
 echo "== video =="
 ls -lah "$VIDEO"
 
 echo "== run full clip with evidence snapshots =="
-export PYTHONPATH=src
-python -m idle_agent \
+PYTHONPATH=src python -m idle_agent \
   --source file \
   --url "$VIDEO" \
-  --camera-id cam-01 \
-  --device cuda:0 \
-  --target-fps 8 \
+  --camera-id "$CAMERA_ID" \
+  --device "$DEVICE" \
+  --target-fps "$TARGET_FPS" \
   --preview-scale 0.5 \
-  --clip-start "2026-11-18T15:00:05+05:00" \
-  --output-dir /workspace/employee_idle_agent/output
+  --clip-start "$CLIP_START" \
+  --output-dir "$OUTPUT_DIR"
 
 echo "== results =="
-ls -lah /workspace/employee_idle_agent/output/
-ls -lah /workspace/employee_idle_agent/output/evidence/ | head -40
-wc -l /workspace/employee_idle_agent/output/events.jsonl || true
-head -n 5 /workspace/employee_idle_agent/output/events.jsonl || true
+ls -lah "$OUTPUT_DIR/"
+ls -lah "$OUTPUT_DIR/evidence/" | head -40
+wc -l "$OUTPUT_DIR/events.jsonl" || true
+head -n 5 "$OUTPUT_DIR/events.jsonl" || true
+echo "Save this run: bash scripts/vast/save_run.sh"

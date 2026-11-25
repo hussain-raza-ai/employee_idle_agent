@@ -38,12 +38,29 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 $env:PYTHONPATH = "src"
-python -m idle_agent --source file --camera-id cam-01
+python -m idle_agent --source file --camera-id cam-01 --clip-start "2026-11-18T15:00:05+05:00"
 ```
 
-Outputs: `output/preview.mp4` and `output/events.jsonl`.
+Outputs: `output/events.jsonl`, `output/evidence/*.jpg` and `output/preview.mp4`.
 
 Live RTSP (after NVR credentials): same CLI with `--source rtsp --url "rtsp://..."`.
+
+## Development on a GPU instance (Vast.ai)
+
+The GPU instance is disposable: code lives on GitHub, recordings and run outputs
+live in a private B2/S3 bucket. [CLAUDE.md](CLAUDE.md) holds the project rules,
+the known bugs and the commands; [docs/devlog.md](docs/devlog.md) records what
+each session did and what is next.
+
+```bash
+bash scripts/vast/bootstrap.sh     # fresh instance: tools, deps, data, smoke test
+pytest -q                          # CPU unit tests, no GPU or torch needed
+bash scripts/vast/save_run.sh      # upload output/ to the bucket
+bash scripts/vast/end_session.sh   # prints SAFE TO DESTROY when nothing would be lost
+```
+
+Configure with environment variables (see [.env.example](.env.example)):
+`GH_TOKEN`, `B2_REMOTE`, `RCLONE_CONFIG_B2_*`.
 
 ## Tech stack (locked)
 
