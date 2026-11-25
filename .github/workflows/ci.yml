@@ -1,0 +1,100 @@
+name: CI
+
+# CPU only. The GPU pipeline (YOLO, video decoding) runs on the Vast.ai
+# instance, never here: GitHub-hosted runners have no GPU and the heavy wheels
+# would make every PR slow.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Unit tests
+        run: pytest -q
+
+      - name: Config files parse
+        run: |
+          python - <<'PY'
+          import pathlib, yaml
+          for path in sorted(pathlib.Path("config").glob("*.yaml")):
+              yaml.safe_load(path.read_text(encoding="utf-8"))
+              print(f"ok {path}")
+          for path in sorted(pathlib.Path("openapi").glob("*.yaml")):
+              yaml.safe_load(path.read_text(encoding="utf-8"))
+              print(f"ok {path}")
+          PY
+
+      - name: Modules import without torch
+        run: |
+          PYTHONPATH=src python -c "
+          import idle_agent.state_machine, idle_agent.zones
+          print('state_machine and zones import with no torch installed')"
+
+      - name: Shell scripts are valid
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          bash -n scripts/vast/*.sh remote_run_*.sh
+          # Advisory only: style findings should not block a PR.
+          shellcheck -S error scripts/vast/*.sh remote_run_*.sh || true
+
+  no-heavy-assets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No model weights, video, or run output committed
+        run: |
+          BAD=$(git ls-files \
+            | grep -E '\.(pt|pth|onnx|engine|mp4|mkv|avi|mov)$|^recordings/|^output/' \
+            || true)
+          if [ -n "$BAD" ]; then
+            echo "These must stay out of git (see .gitignore and CLAUDE.md):"
+            echo "$BAD"
+            exit 1
+          fi
+          echo "clean"
+
+      - name: No obvious secrets committed
+        run: |
+          BAD=$(git ls-files | grep -E '(^|/)\.env$|\.pem$|\.git-credentials$' || true)
+          if [ -n "$BAD" ]; then
+            echo "Possible secret files committed:"
+            echo "$BAD"
+            exit 1
+          fi
+          # A real RTSP password in a tracked config would leak on a public repo.
+          # Comment lines (documentation examples) are ignored.
+          HITS=$(git grep -nIE 'rtsp://[^$"[:space:]]+:[^$@"[:space:]]+@' -- \
+                   ':!*.md' ':!.github/**' \
+                 | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)
+          if [ -n "$HITS" ]; then
+            echo "Hardcoded RTSP credentials found — use \${NVR_USER}/\${NVR_PASSWORD}:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "clean"

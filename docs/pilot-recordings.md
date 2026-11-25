@@ -33,8 +33,18 @@ recordings/
     aisle_traffic_001.mp4
   cam-02/
     ...
-  calibration/
-    notes.md          # human notes after review
+```
+
+`recordings/` is gitignored and lives in the B2/S3 bucket, not in git. Write
+calibration notes to `docs/calibration/notes.md` instead, which is committed.
+
+Before uploading, shrink each clip to the inference width. The detector resizes
+every frame to 640 px anyway (`imgsz=640` in `detect.py`), so full 1080p only
+costs upload time:
+
+```powershell
+ffmpeg -i in.mp4 -vf scale=640:-2 -c:v libx264 -crf 23 -preset veryfast -an out.mp4
+rclone copy .\recordings_640 b2:cctv-idle-data/recordings --progress
 ```
 
 ## Capture tips
@@ -51,7 +61,7 @@ recordings/
 2. Run offline person detect + motion score on `active_work_*` → note typical motion scores.
 3. Run on `idle_present_*` → set `idle_threshold` just above idle scores, below active scores.
 4. Verify `idle_confirm_seconds` / `away_confirm_seconds` against labeled ground truth.
-5. Record final values in `recordings/calibration/notes.md` and update `config/idle_rules.yaml` if changed.
+5. Record final values in `docs/calibration/notes.md` and update `config/idle_rules.yaml` if changed.
 6. Only then enable live POSTs to ERP.
 
 ## Collection checklist

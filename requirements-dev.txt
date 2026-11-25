@@ -1,0 +1,6 @@
+# Test dependencies. Deliberately excludes torch, ultralytics and opencv so the
+# suite runs on a CPU runner in seconds: the tested modules (state_machine,
+# zones) need only PyYAML.
+pytest>=8.0
+PyYAML>=6.0
+jsonschema>=4.20
