@@ -24,28 +24,33 @@ Current pilot: `cam-01`, zone `ws-counter-1` (a counter computer-operator desk).
 
 **Built** (`src/idle_agent/`): video ingest, YOLOv8-pose + ByteTrack detection,
 motion scoring, sticky primary-occupant tracking, pose behaviour signals, the
-state machine, and local output (`output/events.jsonl`, `output/evidence/*.jpg`,
-`output/preview.mp4`).
+state machine, the shift/break/holiday calendar (`shifts.py`, `BREAK` state),
+wall-clock handling (`clock.py`), and local output (`output/events.jsonl`,
+`output/evidence/*.jpg`, `output/preview.mp4`).
 
 **Designed only** — described in `docs/` and `config/` but with no code yet:
 ERP HTTPS adapter, Redis Streams queue, PostgreSQL audit store, FastAPI health
-endpoint, the shift/break/holiday calendar (`BREAK` state), `zone_overrides`,
-multi-camera loading from `cameras.yaml`, optical-flow motion, main-stream
-snapshots. Do not assume these work — check the code before citing them.
+endpoint, `zone_overrides`, multi-camera loading from `cameras.yaml`,
+optical-flow motion, main-stream snapshots. Do not assume these work — check
+the code before citing them.
+
+## How time works
+
+- Event times are wall-clock times in the site timezone (`timezone:` in
+  `idle_rules.yaml`). Nothing falls back to 1970.
+- Recording: `--clip-start` if given; else the start is read from an NVR-style
+  file name (`…_20261118150005_….mp4`); else the CLI stops and asks for it.
+- Live RTSP: t=0 is the moment the stream opens; frame times come from a
+  monotonic clock, not frame count.
+- The shift calendar uses that wall-clock time. `demo_overrides.yaml` sets
+  `ignore_shifts: true`, so the default CLI run on a recording ignores shifts.
+  Pass `--demo-overrides ""` to run with the production calendar.
 
 ## Known bugs (verified, not yet fixed)
 
-1. **Orphan AWAY_ENDED.** An occupant who is IDLE, leaves for more than
-   `debounce_leave_seconds` but less than `away_confirm_seconds`, and returns
-   produces `IDLE_ENDED`, an `AWAY_ENDED` whose `AWAY_STARTED` was never
-   emitted, and an immediate `IDLE_STARTED` with no confirm period.
-   See `state_machine.py` lines ~201-217 and ~275-282.
-2. **1970 timestamps.** Without `--clip-start`, `clip_start` defaults to the
-   Unix epoch, so every `started_at` is `1970-01-01`. Live RTSP has the same
-   problem because nothing reads the wall clock.
-3. **Shifts and breaks ignored.** `config/idle_rules.yaml` defines shifts,
-   breaks and weekly off, and `load_rules` sets `rules["ignore_shifts"]`, but no
-   code reads any of it. Alerts fire during lunch.
+Fixed so far: orphan `AWAY_ENDED` after a short absence, 1970 timestamps, and
+the ignored shift calendar (see `docs/devlog.md`). Their tests are in `tests/`.
+
 4. **Motion window is frames, not seconds.** `motion_window_seconds: 3` becomes
    a deque of 3 samples (~0.4 s at 8 FPS). Unverified consequence: the
    `idle_threshold` of 0.08 may be far above any real per-frame score, which
@@ -69,8 +74,8 @@ snapshots. Do not assume these work — check the code before citing them.
   logical change per branch: `fix/...`, `feat/...`, `chore/...`, `docs/...`.
 - **Tests before the GPU.** `pytest -q` runs with no GPU and no torch. Run it
   after every change to `state_machine.py`, `zones.py` or `behaviors.py`.
-- **Always pass `--clip-start`** when running a recording, or the events carry
-  1970 timestamps.
+- **Pass `--clip-start`** for any recording whose file name is not an NVR
+  export; the CLI refuses to guess.
 - **Save every run**: `bash scripts/vast/save_run.sh` before the instance dies.
 - **End every session** by updating `docs/devlog.md` and running
   `bash scripts/vast/end_session.sh`.
@@ -88,7 +93,11 @@ pytest -q
 
 # CPU smoke test, ~15 s
 PYTHONPATH=src python -m idle_agent --source file --device cpu \
-  --max-frames 120 --target-fps 4
+  --max-frames 120 --target-fps 4 --clip-start "2026-11-18T15:00:05+05:00"
+
+# same clip with the production shift calendar instead of demo overrides
+PYTHONPATH=src python -m idle_agent --source file --demo-overrides "" \
+  --clip-start "2026-11-18T15:00:05+05:00"
 
 # full clip on GPU
 PYTHONPATH=src python -m idle_agent --source file --camera-id cam-01 \
@@ -96,9 +105,10 @@ PYTHONPATH=src python -m idle_agent --source file --camera-id cam-01 \
   --clip-start "2026-11-18T15:00:05+05:00"
 
 # live RTSP (needs LAN access to the camera; a cloud GPU cannot reach a private IP)
+# t=0 is anchored to the wall clock when the stream opens; no --clip-start needed.
 PYTHONPATH=src python -m idle_agent --source rtsp \
   --url "rtsp://USER:PASS@HOST:554/Streaming/Channels/102" --camera-id cam-01 \
-  --clip-start "$(date --iso-8601=seconds)"
+  --no-preview
 
 # save outputs to the bucket, then check it is safe to destroy the instance
 bash scripts/vast/save_run.sh

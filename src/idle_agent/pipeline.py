@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import cv2
 import numpy as np
 
+from idle_agent import clock
 from idle_agent.behaviors import BehaviorScorer
 from idle_agent.detect import Detector, PersonDetection
 from idle_agent.primary import ZonePrimaryTracker
@@ -39,6 +40,8 @@ def _draw_zones(
             color = (0, 0, 255)
         elif state == "ACTIVE":
             color = (0, 220, 0)
+        elif state == "BREAK":
+            color = (160, 160, 160)
         cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2)
         if zone.work_polygon:
             work = np.array(zone.polygon_pixels(zone.work_polygon, w, h), dtype=np.int32)
@@ -213,8 +216,10 @@ def run_pipeline(
     )
     sm = ZoneStateMachine(camera_id, [z.id for z in zones], rules, clip_start=clip_start)
     scorer = BehaviorScorer(rules.get("behaviors") or {})
+    # A live stream with no explicit start is anchored when it opens, below.
+    anchor_live = clip_start is None and source_type == "rtsp"
     if clip_start is not None:
-        print(f"Clip wall-clock start: {clip_start.isoformat()}")
+        print(f"Clip wall-clock start: {sm.clip_start.isoformat()}")
     print(
         f"Thresholds: idle={sm.idle_confirm}s away={sm.away_confirm}s "
         f"escalate={sm.escalate_seconds}s  evidence_snapshots={include_snapshot}"
@@ -223,6 +228,7 @@ def run_pipeline(
         f"Behaviors: phone={sm.phone_confirm}s talking={sm.talk_confirm}s "
         f"off_seat={sm.off_seat_confirm}s not_working={sm.not_working_confirm}s"
     )
+    print(sm.calendar.describe())
     print(
         f"Primary track: enabled={primary.enabled} "
         f"lost_grace={primary.lost_grace_seconds}s "
@@ -243,6 +249,11 @@ def run_pipeline(
             f"({source.frame_width}x{source.frame_height} @ {source.source_fps:.1f} fps, "
             f"sample every {sample_every} frame(s) → ~{target_fps} FPS)"
         )
+        if anchor_live:
+            # Frame times of a live stream count from this moment (sources.py),
+            # so t=0 is now. Set it after the model load, not before.
+            sm.clip_start = clock.now(sm.tz)
+            print(f"Live stream anchored to wall clock: {sm.clip_start.isoformat()}")
 
         with events_path.open("w", encoding="utf-8") as event_file:
             for packet in source.frames():
@@ -320,11 +331,7 @@ def run_pipeline(
                     vis = packet.frame.copy()
                     _draw_zones(vis, zones, states, prim_map, sm.behavior_labels())
                     _draw_people(vis, people, prim_set)
-                    wall_label = ""
-                    if clip_start is not None:
-                        from datetime import timedelta
-
-                        wall_label = " " + (clip_start + timedelta(seconds=packet.timestamp_seconds)).isoformat()
+                    wall_label = " " + sm._wall(packet.timestamp_seconds).strftime("%H:%M:%S")
                     prim_txt = ",".join(f"{k}:{v}" for k, v in prim_map.items() if v) or "-"
                     cv2.putText(
                         vis,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
@@ -54,6 +55,11 @@ class VideoSource:
             self.open()
         assert self._cap is not None
 
+        # A file's time comes from its frame index. A live stream's comes from a
+        # monotonic clock: its reported FPS is often wrong and frames get
+        # dropped, so index / fps drifts away from real time.
+        live = self.source_type == "rtsp"
+        started = time.monotonic()
         index = 0
         while True:
             if self.max_frames is not None and index >= self.max_frames:
@@ -61,7 +67,7 @@ class VideoSource:
             ok, frame = self._cap.read()
             if not ok or frame is None:
                 break
-            ts = index / self.source_fps
+            ts = (time.monotonic() - started) if live else index / self.source_fps
             yield FramePacket(
                 frame=frame,
                 index=index,

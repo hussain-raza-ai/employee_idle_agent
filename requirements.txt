@@ -3,3 +3,6 @@ opencv-python-headless>=4.8.0
 numpy>=1.24.0
 PyYAML>=6.0
 torch>=2.1.0
+# IANA timezone database for zoneinfo. Linux usually has one already; Windows
+# does not, and without it Asia/Karachi cannot be resolved.
+tzdata>=2024.1

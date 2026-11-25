@@ -94,10 +94,16 @@ breaks:
     start: "15:30"
     end: "15:45"
 
-# Sundays / holidays: no monitoring (treat as BREAK)
+# Days off: no monitoring (BREAK). A night shift that runs past midnight counts
+# as the day it started, so a Saturday night shift ends normally on a Sunday.
 holidays:
-  # - "2026-12-25"
   weekly_off: [sun]
+  dates: []                         # e.g. ["2026-12-25", "2027-02-05"]
+
+# Outside a shift, in a break, or on a day off the zone is in BREAK: any open
+# IDLE/AWAY/PHONE/... episode is closed with its *_ENDED event at that moment,
+# nothing new starts, and timers restart from zero when the shift resumes.
+# demo_overrides.yaml sets ignore_shifts: true, which turns all of this off.
 
 # Event types emitted by the state machine
 events:

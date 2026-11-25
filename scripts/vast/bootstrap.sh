@@ -66,7 +66,7 @@ python -m pip install -q --upgrade pip
 # torch is intentionally skipped here: the template already has the CUDA build,
 # and reinstalling from requirements.txt can replace it with a CPU wheel.
 python -m pip install -q "ultralytics>=8.3.0" "opencv-python-headless>=4.8.0" \
-  "numpy>=1.24.0" "PyYAML>=6.0"
+  "numpy>=1.24.0" "PyYAML>=6.0" "tzdata>=2024.1"
 [[ -f requirements-dev.txt ]] && python -m pip install -q -r requirements-dev.txt
 python - <<'PY'
 import importlib
@@ -110,8 +110,10 @@ fi
 
 step "Smoke test (CPU, 120 frames)"
 if find "$RECORDINGS_DIR" -type f -name '*.mp4' | grep -q .; then
+  # Explicit --clip-start so the smoke test runs even on a renamed clip.
   PYTHONPATH=src timeout 600 python -m idle_agent --source file --device cpu \
-    --max-frames 120 --target-fps 4 --no-preview 2>&1 | tail -8
+    --max-frames 120 --target-fps 4 --no-preview \
+    --clip-start "2026-11-18T15:00:05+05:00" 2>&1 | tail -8
 else
   warn "no video under $RECORDINGS_DIR — smoke test skipped"
 fi

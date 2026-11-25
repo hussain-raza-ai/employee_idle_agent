@@ -39,12 +39,10 @@ cap.release()
 PY
 
 echo "== run spike =="
+# Without CLIP_START the CLI reads the start from an NVR-style file name
+# (…_20261118150005_….mp4), and stops with instructions if there is none.
 CLIP_ARGS=()
-if [[ -n "${CLIP_START:-}" ]]; then
-  CLIP_ARGS=(--clip-start "$CLIP_START")
-else
-  echo "WARNING: CLIP_START not set — event timestamps will read 1970." >&2
-fi
+[[ -n "${CLIP_START:-}" ]] && CLIP_ARGS=(--clip-start "$CLIP_START")
 PYTHONPATH=src python -m idle_agent \
   --source file \
   --url "$VIDEO" \
