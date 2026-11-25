@@ -4,33 +4,50 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import datetime, tzinfo
 from pathlib import Path
+from typing import Optional
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _parse_clip_start(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    text = value.strip()
-    # Allow trailing Z
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(text)
-    except ValueError as exc:
-        raise SystemExit(
-            f"Invalid --clip-start '{value}'. Use ISO8601, e.g. 2026-11-18T15:00:05+05:00"
-        ) from exc
-    if dt.tzinfo is None:
-        # Assume Asia/Karachi offset if bare local time
-        from datetime import timezone, timedelta
+def resolve_clip_start(
+    source: str,
+    url: str,
+    clip_start_text: Optional[str],
+    tz: tzinfo,
+) -> Optional[datetime]:
+    """Decide what wall-clock time video t=0 corresponds to.
 
-        dt = dt.replace(tzinfo=timezone(timedelta(hours=5)))
-    return dt
+    - An explicit --clip-start always wins; a bare time means site local time.
+    - A recording with no --clip-start takes its start from an NVR-style file
+      name (…_20261118150005_….mp4). If the name has no stamp, stop: guessing
+      would put wrong times on every event.
+    - A live stream returns None; the pipeline anchors it to the wall clock at
+      the moment the stream opens.
+    """
+    from idle_agent import clock
+
+    if clip_start_text:
+        try:
+            return clock.parse_iso(clip_start_text, tz)
+        except ValueError as exc:
+            raise SystemExit(f"--clip-start: {exc}") from exc
+    if source == "file":
+        derived = clock.clip_start_from_filename(url, tz)
+        if derived is not None:
+            print(f"Clip start read from the file name: {derived.isoformat()}")
+            return derived
+        raise SystemExit(
+            f"Cannot tell when '{Path(url).name}' was recorded, so every event "
+            f"time would be wrong.\nPass the recording's real start, e.g.\n"
+            f'  --clip-start "2026-11-18T15:00:05+05:00"\n'
+            f"or keep the NVR file name, which carries it "
+            f"(…_YYYYMMDDhhmmss_….mp4)."
+        )
+    return None
 
 
 def _default_cam01_video(root: Path) -> Path | None:
@@ -104,7 +121,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--clip-start",
         default=None,
-        help="Wall-clock start of the recording (ISO8601), e.g. 2026-11-18T15:00:05+05:00",
+        help=(
+            "Wall-clock start of the recording (ISO-8601), e.g. "
+            "2026-11-18T15:00:05+05:00. Optional for NVR-named files, which carry "
+            "it; ignored for --source rtsp unless given."
+        ),
     )
     parser.add_argument(
         "--preview-scale",
@@ -122,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     if str(src) not in sys.path:
         sys.path.insert(0, str(src))
 
-    from idle_agent.pipeline import run_pipeline
+    from idle_agent import clock
 
     args = build_parser().parse_args(argv)
     if not args.url:
@@ -132,6 +153,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    # Settle the clock before loading the model, so a missing start time fails
+    # in a second instead of after a long model download.
+    tz = clock.tz_from_rules_file(args.idle_rules)
+    clip_start = resolve_clip_start(args.source, args.url, args.clip_start, tz)
+
+    from idle_agent.pipeline import run_pipeline
 
     demo = args.demo_overrides if args.demo_overrides else None
     run_pipeline(
@@ -147,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         max_frames=args.max_frames,
         device=args.device,
         write_preview=not args.no_preview,
-        clip_start=_parse_clip_start(args.clip_start),
+        clip_start=clip_start,
         preview_scale=args.preview_scale,
     )
     return 0

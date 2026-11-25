@@ -345,14 +345,9 @@ def test_idempotency_key_is_built_from_identity_and_start(rules):
     )
 
 
-# --- bug 2 in CLAUDE.md: 1970 timestamps -----------------------------------
+# --- timestamps ----------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason="CLAUDE.md bug 2: without clip_start, started_at falls back to the "
-    "Unix epoch instead of the wall clock",
-    strict=True,
-)
 def test_timestamps_are_not_epoch_without_clip_start(rules):
     sm = ZoneStateMachine("cam-01", [ZONE], rules)
     assert not sm._iso(0).startswith("1970"), "epoch timestamp"

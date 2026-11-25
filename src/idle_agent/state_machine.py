@@ -5,11 +5,13 @@ from __future__ import annotations
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Deque, Dict, List, Optional
 
 import yaml
+
+from idle_agent import clock
 
 
 def _merge_dict(base: dict, override: dict) -> dict:
@@ -125,9 +127,14 @@ class ZoneStateMachine:
     ):
         self.camera_id = camera_id
         self.rules = rules
-        self.tz_name = rules.get("timezone", "Asia/Karachi")
-        # Wall-clock start of the recording; video t=0 maps to this instant.
-        self.clip_start = clip_start or datetime(1970, 1, 1, tzinfo=timezone.utc)
+        self.tz_name = rules.get("timezone", clock.DEFAULT_TIMEZONE)
+        self.tz = clock.site_tz(self.tz_name)
+        # Wall-clock instant that video t=0 maps to. A recording passes its real
+        # start; with none given this is the current time, never the epoch.
+        # A live source re-anchors it when the stream opens (see pipeline).
+        self.clip_start = (
+            clock.aware(clip_start, self.tz) if clip_start else clock.now(self.tz)
+        )
         eval_cfg = rules.get("evaluation", {})
         motion_cfg = rules.get("motion", {})
         thr = rules.get("thresholds", {})
@@ -162,9 +169,12 @@ class ZoneStateMachine:
         self.not_working_grace = float(idle_hands.get("end_grace_seconds", 8))
         self._zones: Dict[str, _ZoneRuntime] = {zid: _ZoneRuntime() for zid in zone_ids}
 
+    def _wall(self, t_seconds: float) -> datetime:
+        """Site-local wall-clock time for an offset into the video or stream."""
+        return (self.clip_start + timedelta(seconds=float(t_seconds))).astimezone(self.tz)
+
     def _iso(self, t_seconds: float) -> str:
-        wall = self.clip_start + timedelta(seconds=float(t_seconds))
-        return wall.isoformat()
+        return self._wall(t_seconds).isoformat()
 
     def update(
         self,
