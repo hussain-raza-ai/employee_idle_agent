@@ -11,7 +11,12 @@ stream, detects the one operator at a workstation, and emits timed events
 `_STARTED` / `_ESCALATED` / `_ENDED`. Anonymous track IDs only, no face
 recognition. Alert + supervisor review, never automatic discipline.
 
-Current pilot: `cam-01`, zone `ws-counter-1` (a counter computer-operator desk).
+Current pilot: `cam-01` ("Pharmacy cash counter 124", NVR channel 15), zone
+`ws-counter-1`: the seated computer operator on the staff side of the counter.
+Pilot clip: `recordings/cam-01/NVR-7BB9_ch15_main_20261118150007_20261118152059.mp4`
+(640x360 copy, 20 min 52 s; the bucket holds it under `recordings/cam-01/`).
+Customers queue on the left of the counter, staff sit on the right; a second
+operator desk (upper) and a laptop desk (lower) are in view but not configured.
 
 ## Where to start
 
@@ -91,18 +96,22 @@ bash scripts/vast/bootstrap.sh
 # unit tests (no GPU, no torch)
 pytest -q
 
+# The pilot clip's start time (15:00:07) comes from its NVR file name, so no
+# --clip-start is needed for it. Add one for any renamed clip.
+
 # CPU smoke test, ~15 s
 PYTHONPATH=src python -m idle_agent --source file --device cpu \
-  --max-frames 120 --target-fps 4 --clip-start "2026-11-18T15:00:05+05:00"
+  --max-frames 120 --target-fps 4
 
 # same clip with the production shift calendar instead of demo overrides
-PYTHONPATH=src python -m idle_agent --source file --demo-overrides "" \
-  --clip-start "2026-11-18T15:00:05+05:00"
+PYTHONPATH=src python -m idle_agent --source file --demo-overrides ""
 
 # full clip on GPU
 PYTHONPATH=src python -m idle_agent --source file --camera-id cam-01 \
-  --device cuda:0 --target-fps 8 --preview-scale 0.5 \
-  --clip-start "2026-11-18T15:00:05+05:00"
+  --device cuda:0 --target-fps 8 --preview-scale 0.5
+
+# zone check: does the primary tracker hold the operator? (prints every 15 s)
+python scripts/diag_primary.py --seconds 300
 
 # live RTSP (needs LAN access to the camera; a cloud GPU cannot reach a private IP)
 # t=0 is anchored to the wall clock when the stream opens; no --clip-start needed.

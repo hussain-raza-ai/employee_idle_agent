@@ -35,16 +35,17 @@ already ships CUDA torch, and the script pulls the recordings from the bucket.
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m idle_agent --source file --camera-id cam-01 --clip-start "2026-11-18T15:00:05+05:00"
+python -m idle_agent --source file --camera-id cam-01
 ```
 
-Always pass `--clip-start` (the recording's real start time). Without it every
-event is dated `1970-01-01`.
+The start time comes from the NVR file name. If a clip has been renamed, pass
+it explicitly, e.g. `--clip-start "2026-11-18T15:00:07+05:00"`; without either
+the CLI stops rather than guess.
 
 If multiple videos exist, pass the path explicitly:
 
 ```powershell
-python -m idle_agent --source file --url "recordings/cam-01/NVR-7BB9_ch12_main_20261118150005_20261118152059.mp4"
+python -m idle_agent --source file --url "recordings/cam-01/NVR-7BB9_ch15_main_20261118150007_20261118152059.mp4"
 ```
 
 ## CPU smoke test (short)

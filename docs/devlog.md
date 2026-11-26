@@ -29,6 +29,26 @@ These need the GPU and real footage, so they belong on a Vast session.
 CPU-only work that can be done anywhere: RTSP reconnect (bug 5), the ERP
 adapter, `zone_overrides`.
 
+## 2026-11-26 — ws-counter-1 redrawn on the real pilot camera (CPU, no GPU run)
+
+- The pilot clip in the bucket is **ch15** ("Pharmacy cash counter 124"),
+  `NVR-7BB9_ch15_main_20261118150007_20261118152059.mp4`, 640x360, 20 min 52 s.
+  The old docs and scripts named a ch12 clip.
+- Overlaying the old `ws-counter-1` on ch15 frames showed it covered the
+  counter top and the **customer queue**: customers stood inside it, and the
+  operator's chair was outside. Every run with it would have tracked customers.
+- Redrawn on the staff side: the seated operator (dark-blue uniform), his chair
+  and both keyboards. Checked on 12 frames across the clip: the operator stays
+  inside when seated, leaning and typing; customers, the operator at the upper
+  desk, staff walking behind and the laptop desk below stay outside.
+- `test_zones.py` pins this with measured points (operator inside, customers
+  and neighbours outside). `cameras.yaml` cam-01 now says channel 15.
+- Overlay images are **not** committed: they show customers and the repo is
+  public.
+- **Still to verify on the GPU:** the work polygon's right edge (desk edge vs
+  hands in the lap) and the seat polygon, against real wrist and hip keypoints.
+  Run `python scripts/diag_primary.py --seconds 300` first, then the full clip.
+
 ## 2026-11-25 — three state-machine bugs fixed (CPU, no GPU run)
 
 - **Orphan AWAY_ENDED:** a short absence from IDLE no longer emits an

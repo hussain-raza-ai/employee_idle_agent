@@ -6,31 +6,45 @@ version: "1.0"
 coordinate_space: normalized_frame  # independent of resolution
 
 zones:
-  # Primary pilot desk (cam-01 pharmacy counter operator)
+  # Primary pilot desk: the seated computer operator on the STAFF side of the
+  # pharmacy cash counter ("Pharmacy cash counter 124", NVR channel 15).
+  # Drawn on NVR-7BB9_ch15_main_20261118150007_20261118152059.mp4 and checked on
+  # frames across the whole 21-minute clip. Normalised, so it holds for both the
+  # 1920x1080 original and the 640x360 copy.
   - id: ws-counter-1
     name: "Computer operator desk 1"
     camera_id: cam-01
     enabled: true
     expected_occupancy: 1
+    # Operator's chair plus the keyboard desk in front of it. The left edge runs
+    # along the counter so customers in the queue stay outside; the sloped top
+    # edge keeps out the neighbouring operator at the upper desk; the right edge
+    # keeps out staff walking behind.
     polygon:
-      - [0.2307, 0.3074]
-      - [0.3953, 0.3074]
-      - [0.3953, 0.8333]
-      - [0.2307, 0.8333]
-    # Keyboard / counter band. Wrists here count as working even if the body is still.
+      - [0.310, 0.370]
+      - [0.400, 0.340]
+      - [0.465, 0.310]
+      - [0.475, 0.600]
+      - [0.370, 0.600]
+    # Both keyboards on the desk. A wrist here counts as working even when the
+    # body is still. The right edge sits at the desk edge: wrists resting in the
+    # lap (x ~0.42-0.45) fall outside it. First draft: confirm against real
+    # wrist keypoints on the GPU run before trusting NOT_WORKING.
     work_polygon:
-      - [0.235, 0.400]
-      - [0.395, 0.400]
-      - [0.395, 0.640]
-      - [0.235, 0.640]
-    # Chair pocket (closer to the camera). In the zone but outside this polygon = off seat.
-    # Slightly wider than the desk so a lean while seated stays "on seat".
+      - [0.310, 0.330]
+      - [0.400, 0.330]
+      - [0.410, 0.560]
+      - [0.330, 0.560]
+    # Chair and the space around it. Hips outside this while in the zone = off seat.
     seat_polygon:
-      - [0.200, 0.580]
-      - [0.420, 0.580]
-      - [0.420, 0.840]
-      - [0.200, 0.840]
-    notes: "Desk rect from still (x=443 y=332 w=316 h=568). Seat and work are sub-regions of that desk."
+      - [0.400, 0.380]
+      - [0.470, 0.360]
+      - [0.475, 0.570]
+      - [0.400, 0.570]
+    notes: >-
+      Redrawn 2026-11-26. The previous rectangle (x 0.23-0.40, y 0.31-0.83) sat on
+      the counter top and the customer queue, not on the operator: customers stood
+      inside it and the operator's chair was outside it.
 
   # Additional cam-01 desks — enable after drawing polygons
   # - id: ws-counter-2
