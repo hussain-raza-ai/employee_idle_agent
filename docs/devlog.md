@@ -29,6 +29,19 @@ These need the GPU and real footage, so they belong on a Vast session.
 CPU-only work that can be done anywhere: RTSP reconnect (bug 5), the ERP
 adapter, `zone_overrides`.
 
+## 2026-11-26 — secrets come from a file, not Vast account env vars
+
+- The Vast account is a team in which this user is a **member**. Members cannot
+  edit the team's environment variables, and team-level ones would reach every
+  member's instances anyway.
+- Secrets now live in `%USERPROFILE%\vast-secrets\cctv.env` on the Windows PC,
+  copied to `/root/.cctv.env` with one `scp` per session.
+  `scripts/vast/load_env.sh` strips Notepad's CRLF and BOM into
+  `~/.cctv.env.sh` (mode 600), which bootstrap, save_run, end_session and
+  every new shell load. Claude Code is denied reading either file.
+- Tests: `tests/test_load_env.py` covers BOM/CRLF, comments, an empty file
+  under `set -euo pipefail`, and a missing file.
+
 ## 2026-11-26 — ws-counter-1 redrawn on the real pilot camera (CPU, no GPU run)
 
 - The pilot clip in the bucket is **ch15** ("Pharmacy cash counter 124"),
