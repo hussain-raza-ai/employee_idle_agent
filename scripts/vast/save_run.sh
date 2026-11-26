@@ -7,6 +7,8 @@
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck source=scripts/vast/load_env.sh
+. "$REPO_DIR/scripts/vast/load_env.sh"
 OUTPUT_DIR="${OUTPUT_DIR:-$REPO_DIR/output}"
 B2_REMOTE="${B2_REMOTE:-b2:cctv-idle-data}"
 LABEL="${1:-}"

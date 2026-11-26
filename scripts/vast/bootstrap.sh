@@ -4,19 +4,33 @@
 #
 #   bash scripts/vast/bootstrap.sh
 #
-# Expects these as Vast account-level environment variables (see .env.example):
-#   GH_TOKEN, RCLONE_CONFIG_B2_TYPE, RCLONE_CONFIG_B2_ACCOUNT, RCLONE_CONFIG_B2_KEY
+# Secrets: GH_TOKEN, RCLONE_CONFIG_B2_TYPE, RCLONE_CONFIG_B2_ACCOUNT,
+# RCLONE_CONFIG_B2_KEY and B2_REMOTE. Either copy them in first from Windows:
+#   scp "$HOME\vast-secrets\cctv.env" vast:/root/.cctv.env
+# or set them as Vast account environment variables (see .env.example).
 set -uo pipefail
 
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
-B2_REMOTE="${B2_REMOTE:-b2:cctv-idle-data}"
-RECORDINGS_DIR="${RECORDINGS_DIR:-$REPO_DIR/recordings}"
-
 cd "$REPO_DIR" || exit 1
 
 step() { printf '\n=== %s\n' "$1"; }
 warn() { printf '  !! %s\n' "$1"; }
 ok()   { printf '  ok %s\n' "$1"; }
+
+step "Secrets"
+# shellcheck source=scripts/vast/load_env.sh
+. "$REPO_DIR/scripts/vast/load_env.sh"
+# Every new shell (tmux windows, Claude Code) loads them too.
+grep -q 'cctv.env.sh' ~/.bashrc 2>/dev/null \
+  || echo '[ -f ~/.cctv.env.sh ] && . ~/.cctv.env.sh' >> ~/.bashrc
+for v in GH_TOKEN RCLONE_CONFIG_B2_TYPE RCLONE_CONFIG_B2_ACCOUNT RCLONE_CONFIG_B2_KEY B2_REMOTE; do
+  # Names only. Values are never printed.
+  [[ -n "${!v:-}" ]] && ok "$v set" || warn "$v missing"
+done
+[[ -f ~/.cctv.env ]] || warn "~/.cctv.env not found — copy it from Windows (see the top of this script)"
+
+B2_REMOTE="${B2_REMOTE:-b2:cctv-idle-data}"
+RECORDINGS_DIR="${RECORDINGS_DIR:-$REPO_DIR/recordings}"
 
 step "Repo: $REPO_DIR"
 git rev-parse --short HEAD 2>/dev/null || warn "not a git checkout"
@@ -53,7 +67,7 @@ if [[ -n "${GH_TOKEN:-}" ]]; then
   git config --global user.email "${GIT_USER_EMAIL:-hussain-raza-ai@users.noreply.github.com}"
   ok "git can push with GH_TOKEN"
 else
-  warn "GH_TOKEN not set — set it in the Vast account environment variables"
+  warn "GH_TOKEN not set — copy ~/.cctv.env from Windows, then re-run this script"
 fi
 
 step "Python dependencies"
@@ -99,7 +113,7 @@ command -v claude >/dev/null && ok "claude installed — run 'claude' then /logi
 step "Recordings from $B2_REMOTE"
 mkdir -p "$RECORDINGS_DIR"
 if [[ -z "${RCLONE_CONFIG_B2_ACCOUNT:-}" ]]; then
-  warn "RCLONE_CONFIG_B2_* not set — skipping data pull; copy a video in manually"
+  warn "RCLONE_CONFIG_B2_* not set — copy ~/.cctv.env from Windows, then re-run this script"
 elif rclone lsd "$B2_REMOTE" >/dev/null 2>&1; then
   rclone copy "$B2_REMOTE/recordings" "$RECORDINGS_DIR" --progress --transfers 8
   find "$RECORDINGS_DIR" -type f \( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' \) \
@@ -121,6 +135,7 @@ fi
 cat <<'EOF'
 
 === Ready. Next:
+  source ~/.bashrc     # load the secrets into this shell
   tmux new -A -s main
   claude            # then /login on first use
   cat docs/devlog.md

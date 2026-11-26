@@ -90,8 +90,13 @@ the ignored shift calendar (see `docs/devlog.md`). Their tests are in `tests/`.
 ## Commands
 
 ```bash
+# session start, from Windows PowerShell: copy the secrets file to the instance
+#   scp "$HOME\vast-secrets\cctv.env" vast:/root/.cctv.env
+# Never read, print or echo ~/.cctv.env or ~/.cctv.env.sh: they hold the tokens.
+
 # setup (idempotent; safe to re-run)
 bash scripts/vast/bootstrap.sh
+source ~/.bashrc
 
 # unit tests (no GPU, no torch)
 pytest -q
