@@ -17,27 +17,31 @@ defaults:
 
 cameras:
   - id: cam-01
-    name: "Assembly Line A — Overview"
+    name: "Pharmacy cash counter 124"
     enabled: true
     pilot: true
-    location: "Assembly Hall A"
+    location: "Pharmacy cash counter 124"  # the on-screen label of the camera
     mount: "overhead-angled"  # preferred: overhead | overhead-angled | wall
     brand: "PLACEHOLDER_BRAND"  # e.g. Hikvision, Dahua
     nvr:
       host: "PLACEHOLDER_NVR_HOST"
-      channel: 1
+      # The pilot recording is NVR-7BB9_ch15_..., so this camera is channel 15.
+      channel: 15
     rtsp:
-      # Example: rtsp://user:pass@192.168.1.10:554/Streaming/Channels/102
-      main: "rtsp://${NVR_USER}:${NVR_PASSWORD}@PLACEHOLDER_NVR_HOST:554/Streaming/Channels/101"
-      sub: "rtsp://${NVR_USER}:${NVR_PASSWORD}@PLACEHOLDER_NVR_HOST:554/Streaming/Channels/102"
+      # Hikvision numbering is <channel><01 main | 02 sub>, so channel 15 is
+      # 1501/1502. Other brands differ — confirm from the NVR web UI.
+      main: "rtsp://${NVR_USER}:${NVR_PASSWORD}@PLACEHOLDER_NVR_HOST:554/Streaming/Channels/1501"
+      sub: "rtsp://${NVR_USER}:${NVR_PASSWORD}@PLACEHOLDER_NVR_HOST:554/Streaming/Channels/1502"
     resolution:
       main: "1920x1080"
       sub: "640x360"
     fps_native: 25
     covers_zones:
-      - ws-assembly-1
-      - ws-assembly-2
-    notes: "Primary pilot camera. Ensure full workstation bodies visible, not faces-only."
+      - ws-counter-1
+    notes: >-
+      Primary pilot camera, overhead-angled over the counter. Customers queue on
+      the left of the counter, staff sit on the right; two operator desks plus a
+      laptop desk are in view. Only ws-counter-1 is configured so far.
 
   - id: cam-02
     name: "Assembly Line B — Overview"

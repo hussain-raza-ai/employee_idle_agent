@@ -38,8 +38,12 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 $env:PYTHONPATH = "src"
-python -m idle_agent --source file --camera-id cam-01 --clip-start "2026-11-18T15:00:05+05:00"
+python -m idle_agent --source file --camera-id cam-01
 ```
+
+The recording's start time is read from its NVR file name
+(`…_20261118150007_….mp4`). For a renamed clip add
+`--clip-start "2026-11-18T15:00:07+05:00"`.
 
 Outputs: `output/events.jsonl`, `output/evidence/*.jpg` and `output/preview.mp4`.
 

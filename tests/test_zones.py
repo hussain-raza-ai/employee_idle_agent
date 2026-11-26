@@ -58,6 +58,41 @@ def test_counter_zone_has_seat_and_work_subregions():
         assert min(zy) <= cy <= max(zy), f"{name} polygon centre outside the zone in y"
 
 
+@pytest.mark.parametrize(
+    "who,x,y,inside",
+    [
+        # Points measured on NVR-7BB9_ch15 frames (normalised).
+        ("seated operator, body centre", 0.43, 0.40, True),
+        ("seated operator, seat point", 0.43, 0.48, True),
+        ("operator leaning to the lower keyboard", 0.40, 0.50, True),
+        ("neighbouring operator at the upper desk", 0.375, 0.26, False),
+        ("customer standing at the counter", 0.26, 0.45, False),
+        ("customer further down the queue", 0.25, 0.70, False),
+        ("staff walking behind the operator", 0.50, 0.35, False),
+        ("pharmacist at the laptop desk below", 0.52, 0.80, False),
+    ],
+)
+def test_counter_zone_covers_the_operator_not_the_customers(who, x, y, inside):
+    """ws-counter-1 must sit on the staff side of the counter.
+
+    The original rectangle covered the customer queue: customers stood inside
+    it and the operator's chair was outside. These points pin the redraw.
+    """
+    zone = load_zones(ZONES_YAML, camera_id="cam-01")[0]
+    assert point_in_polygon(x, y, zone.polygon) is inside, who
+
+
+def test_counter_zone_work_and_seat_match_the_desk():
+    zone = load_zones(ZONES_YAML, camera_id="cam-01")[0]
+    # Hands on either keyboard count as working; hands in the lap do not.
+    assert point_in_polygon(0.37, 0.38, zone.work_polygon), "upper keyboard"
+    assert point_in_polygon(0.37, 0.50, zone.work_polygon), "lower keyboard"
+    assert not point_in_polygon(0.44, 0.44, zone.work_polygon), "lap"
+    # Seated hips are on the seat; a customer's are not.
+    assert point_in_polygon(0.43, 0.45, zone.seat_polygon), "seated hips"
+    assert not point_in_polygon(0.26, 0.55, zone.seat_polygon), "customer"
+
+
 def test_polygon_coordinates_are_normalised():
     """Every coordinate must be a 0-1 fraction, not a pixel value."""
     for zone in load_zones(ZONES_YAML, camera_id="cam-01"):
